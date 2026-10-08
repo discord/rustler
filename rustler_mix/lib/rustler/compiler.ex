@@ -148,13 +148,20 @@ defmodule Rustler.Compiler do
         dst_file = output_file(artifact.name, artifact.kind, target)
         destination_lib = Path.join(priv_dir(), dst_file)
 
-        # If the file exists already, we delete it first. This is to ensure that another
-        # process, which might have the library dynamically linked in, does not generate
-        # a segfault. By deleting it first, we ensure that the copy operation below does
-        # not write into the existing file.
+        # Atomically rename the file to the destination file. This ensures that
+        # any other processes that may have the library dynamically linked does
+        # not generate a segfault.
         Mix.shell().info("Copying #{artifact.filename} to #{destination_lib}")
-        File.rm(destination_lib)
-        File.cp!(artifact.filename, destination_lib)
+
+        temp_name =
+          "#{destination_lib}.tmp-#{System.pid()}-#{System.unique_integer([:positive, :monotonic])}"
+
+        try do
+          File.cp!(artifact.filename, temp_name)
+          File.rename!(temp_name, destination_lib)
+        after
+          File.rm(temp_name)
+        end
       end
     end)
   end
